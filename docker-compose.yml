@@ -1,0 +1,64 @@
+# ═══════════════════════════════════════════════════════════════════════
+#  OrbiFreight — Docker Compose (USO LOCAL — para testar antes do Azure)
+#  Em produção os containers sobem via Azure DevOps Pipeline
+#  RM564434 — Eduarda Weiss Ventura
+# ═══════════════════════════════════════════════════════════════════════
+
+services:
+
+  # ── Container 1: PostgreSQL ──────────────────────────────────────────
+  postgres-rm564434:
+    image: postgres:15
+    container_name: postgres-rm564434
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${DB_NAME:-orbifreight}
+      POSTGRES_USER: ${DB_USERNAME:-orbiuser}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-orbipassword123}
+    volumes:
+      - orbifreight-pgdata:/var/lib/postgresql/data
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    ports:
+      - "5432:5432"
+    networks:
+      - orbifreight-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USERNAME:-orbiuser} -d ${DB_NAME:-orbifreight}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  # ── Container 2: API Java (imagem AlmaLinux 9) ───────────────────────
+  orbifreight-api-rm564434:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: orbifreight-api-rm564434
+    restart: unless-stopped
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+      DB_HOST: postgres-rm564434
+      DB_PORT: 5432
+      DB_NAME: ${DB_NAME:-orbifreight}
+      DB_USERNAME: ${DB_USERNAME:-orbiuser}
+      DB_PASSWORD: ${DB_PASSWORD:-orbipassword123}
+      JWT_SECRET: ${JWT_SECRET:-orbifreight-jwt-secret-gssolution-2026}
+      APP_PORT: 8080
+      JAVA_OPTS: "-Xms256m -Xmx512m"
+    ports:
+      - "8080:8080"
+    networks:
+      - orbifreight-net
+    depends_on:
+      postgres-rm564434:
+        condition: service_healthy
+
+networks:
+  orbifreight-net:
+    driver: bridge
+    name: orbifreight-net
+
+volumes:
+  orbifreight-pgdata:
+    name: orbifreight-pgdata
