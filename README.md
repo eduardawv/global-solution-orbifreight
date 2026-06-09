@@ -1,13 +1,12 @@
-# 🛰️ OrbiFreight API — DevOps com VM AlmaLinux (Azure)
+# 🛰️ OrbiFreight — Sistema de Monitoramento de Transporte Alimentício
 
-> Monitoramento inteligente de transporte alimentício via IoT + Satélite + IA
-> **Stack**: Spring Boot 4 · Java 21 · AlmaLinux 9 · PostgreSQL 15 · Docker · VM Azure
+> Plataforma inteligente de monitoramento de cargas perecíveis integrando **IoT (ESP32 + DHT22)**, **dados satelitais (NASA FIRMS, Open-Meteo)** e **IA (Claude API)** para detectar riscos de deterioração, sugerir rotas alternativas e emitir alertas automáticos.
 
-**Global Solution 2026/1 · FIAP · 2TDS**
+**Global Solution 2026/1 · FIAP · 2TDS · Turmas de Fevereiro**
 
 | Integrante | RM |
 |---|---|
-| **Eduarda Weiss Ventura** | **564434** |
+| **Eduarda Weiss Ventura** *(representante DevOps)* | **564434** |
 | Maria Gabriela Landim Severo | 565146 |
 | Samara Porto Souza | 559072 |
 | Lucas Nunes Soares | 566503 |
@@ -15,101 +14,108 @@
 
 ---
 
+## 💡 Descrição da Solução
+
+O OrbiFreight resolve um problema crítico: **46 milhões de toneladas de alimentos são desperdiçadas no Brasil por ano**, sendo o transporte um dos principais fatores. Frotas de pequeno e médio porte não têm acesso a sistemas de monitoramento contínuos e acessíveis.
+
+A solução inspira-se na tecnologia de sobrevivência de missões espaciais — os mesmos sistemas que garantem a integridade de suprimentos em Marte, aplicados na logística terrestre. O sistema:
+
+- Coleta temperatura e umidade em tempo real via **sensor DHT22 no ESP32**
+- Cruza os dados com **informações satelitais (NASA FIRMS para focos de incêndio, Open-Meteo para clima)**
+- Calcula um **score de risco de 0 a 100** por carga
+- Gera **alertas em linguagem natural via Claude API (Anthropic)**
+- Sugere **rotas alternativas seguras via OSRM**
+- Persiste tudo no banco com **rastreabilidade total para conformidade ANVISA**
+
+---
+
 ## 🏗️ Arquitetura Macro
 
+![Diagrama de Arquitetura OrbiFreight](diagrama-arquitetura.png)
+
 ```
-┌──────────────────────────────────────────────────────────────┐
-│            AZURE — Máquina Virtual (AlmaLinux 9)              │
-│                  IP Público + Porta 8080                     │
-│                                                              │
-│   docker compose up -d                                       │
-│   ┌────────────────────────────┐  ┌──────────────────────┐  │
-│   │ orbifreight-api-rm564434   │  │ postgres-rm564434     │  │
-│   │ Container AlmaLinux 9      │◄─┤ Container PostgreSQL  │  │
-│   │ Spring Boot · Java 21      │  │ Volume: pgdata        │  │
-│   │ Porta 8080                 │  │ Porta 5432            │  │
-│   │ Usuário: orbiuser          │  │                       │  │
-│   └────────────────────────────┘  └──────────────────────┘  │
-│            Rede bridge: orbifreight-net                      │
-└──────────────────────────────────────────────────────────────┘
-        ▲ HTTPS/HTTP + JWT
-┌───────┴────────┐   ┌─────────────────────┐
-│ React Native   │   │ ESP32 IoT (DHT22)   │
-│ Mobile App     │   │ POST /iot/leitura    │
-└────────────────┘   └─────────────────────┘
+┌─────────────────────────────────────────────────────────────────────┐
+│             AZURE CLOUD — East US 2                                  │
+│   VM: vm-orbifreight-rm564434  |  AlmaLinux 9                       │
+│                                                                       │
+│   docker compose up -d --build                                       │
+│   ┌────────────────────────┐     ┌───────────────────────────┐      │
+│   │ orbifreight-api-       │     │ postgres-rm564434          │      │
+│   │ rm564434               │◄────│ PostgreSQL 15              │      │
+│   │ AlmaLinux 9 + Java 21  │JDBC │ Volume: orbifreight-pgdata │      │
+│   │ Spring Boot 4          │     │ Porta: 5432                │      │
+│   │ Usuário: orbiuser      │     └───────────────────────────┘      │
+│   │ Porta: 8080            │                                         │
+│   └────────────┬───────────┘                                         │
+│   Rede bridge: orbifreight-net                                       │
+└────────────────┼────────────────────────────────────────────────────┘
+                 │ HTTP REST (gratuito)
+    ┌────────────▼─────────────────────────────┐
+    │ NASA FIRMS · Open-Meteo · NASA Power      │
+    │ OSRM (Roteamento) · Claude API (IA)       │
+    └──────────────────────────────────────────┘
+         ▲ HTTPS REST + JWT
+┌────────┴──────┐    ┌─────────────────────┐
+│ React Native  │    │ ESP32 IoT (DHT22)   │
+│ Mobile App    │    │ HTTP POST /iot       │
+└───────────────┘    └─────────────────────┘
 ```
 
-**Fluxo CI/CD**: GitHub → git clone na VM → docker compose up → IP público
+**Tabelas relacionadas:** `TIPO_CARGA` ← `CARGA` ← `ALERTA` ← `USUARIO`
 
 ---
 
 ## 📋 Pré-requisitos
 
-- Conta Azure (conta estudante FIAP com crédito gratuito)
-- Um cliente SSH (o Windows 10/11 já tem no terminal)
-- Git instalado no projeto (já vem na VM via script)
-
-> **Você NÃO precisa instalar Docker no seu PC.** Tudo roda na VM.
+- Conta [Azure](https://portal.azure.com) (conta estudante FIAP)
+- Terminal com acesso ao [Azure Cloud Shell](https://shell.azure.com) ou Azure CLI instalado
+- Git instalado no seu PC
 
 ---
 
-## 🚀 How-to — Do clone à execução em nuvem
+## 🚀 How-to — Do clone ao ambiente em nuvem
 
-### ETAPA 1 — Criar a VM AlmaLinux no Azure
+### ETAPA 1 — Clonar o repositório
 
-1. Acesse [portal.azure.com](https://portal.azure.com)
-2. Pesquise **"Virtual Machines"** → **Create** → **Azure virtual machine**
-3. Configure:
-   - **Resource group**: criar novo → `rg-orbifreight`
-   - **Virtual machine name**: `vm-orbifreight-rm564434`
-   - **Region**: Brazil South
-   - **Image**: AlmaLinux OS 9 (procure "AlmaLinux" no marketplace)
-   - **Size**: `Standard_B2s` (2 vCPU, 4 GB RAM — necessário para Docker)
-   - **Authentication type**: Password (mais simples) ou SSH key
-   - **Username**: `azureuser`
-   - **Password**: crie uma senha forte e anote
-4. Na aba **Networking**, em "Inbound ports", marque: **SSH (22)** e **HTTP (80)**
-5. Clique em **Review + Create** → **Create**
-6. Aguarde ~2 min. Quando pronto, vá para o recurso e **anote o "Public IP address"**
+```bash
+git clone https://github.com/eduardawv/global-solution-orbifreight.git
+cd global-solution-orbifreight
+```
 
-### ETAPA 2 — Liberar a porta 8080 no firewall do Azure
+### ETAPA 2 — Criar a VM AlmaLinux no Azure
 
-1. Na página da VM → menu lateral → **Networking** → **Network settings**
-2. Clique em **Create port rule** → **Inbound port rule**
-3. Configure:
-   - **Destination port ranges**: `8080`
-   - **Protocol**: TCP
-   - **Name**: `Porta-API-8080`
-4. Clique em **Add**
+Abra o [Azure Cloud Shell](https://shell.azure.com) (bash), faça upload do arquivo `criar-vm-azure.sh` e execute:
+
+```bash
+chmod +x criar-vm-azure.sh
+./criar-vm-azure.sh
+```
+
+O script cria automaticamente:
+- Resource Group `rg-orbifreight`
+- VM `vm-orbifreight-rm564434` (AlmaLinux 9, Standard_D2s_v5)
+- Portas 22 (SSH) e 8080 (API) abertas
+
+Ao final mostra o **IP público** — anote.
 
 ### ETAPA 3 — Conectar na VM via SSH
-
-No terminal do seu PC (CMD ou PowerShell no Windows):
 
 ```bash
 ssh azureuser@SEU_IP_PUBLICO
 ```
-
-Digite a senha que criou. Na primeira vez, digite `yes` para confiar no host.
+Senha: `OrbiFreight.GS.2026`
 
 ### ETAPA 4 — Instalar Docker na VM
 
-Já dentro da VM, primeiro envie o projeto. A forma mais fácil é via git:
-
 ```bash
-git clone https://github.com/SEU_USUARIO/global-solution-orbifreight.git
+# Dentro da VM:
+git clone https://github.com/eduardawv/global-solution-orbifreight.git
 cd global-solution-orbifreight
-```
-
-Rode o script de instalação do Docker:
-
-```bash
 chmod +x vm-setup-almalinux.sh
 ./vm-setup-almalinux.sh
 ```
 
-Quando terminar, **saia e reconecte** (para o Docker funcionar sem sudo):
-
+Saia e reconecte (necessário para o Docker funcionar sem sudo):
 ```bash
 exit
 ssh azureuser@SEU_IP_PUBLICO
@@ -123,25 +129,22 @@ cp .env.example .env
 docker compose up -d --build
 ```
 
-Aguarde 2-4 minutos na primeira vez (Maven compila + monta imagem AlmaLinux).
+Aguarde 3–5 minutos na primeira vez (Maven compila + monta imagem AlmaLinux).
 
-### ETAPA 6 — Verificar
+### ETAPA 6 — Verificar e acessar
 
 ```bash
 docker ps
 ```
 
-Você verá os dois containers `Up`. Agora, **do seu PC**, abra no navegador:
-
+Acesse no navegador:
 ```
 http://SEU_IP_PUBLICO:8080/swagger-ui.html
 ```
 
-✅ Se abrir o Swagger pela internet, está rodando EM NUVEM (não localhost)!
-
 ---
 
-## 🔍 Evidências Obrigatórias (rode dentro da VM)
+## 🔍 Evidências Obrigatórias
 
 ### Logs dos containers
 ```bash
@@ -149,12 +152,12 @@ docker logs orbifreight-api-rm564434
 docker logs postgres-rm564434
 ```
 
-### Acesso ao container Java — whoami, pwd, ls
+### Acesso ao container Java
 ```bash
 docker exec -it orbifreight-api-rm564434 bash
-whoami    # orbiuser
-pwd       # /app
-ls -l     # app.jar
+whoami   # orbiuser
+pwd      # /app
+ls -l    # app.jar
 exit
 ```
 
@@ -167,38 +170,71 @@ ls -l /var/lib/postgresql/data
 exit
 ```
 
-### SELECT direto no banco (evidência de persistência)
+---
+
+## 🧪 CRUD Completo (via curl)
+
 ```bash
-docker exec -it postgres-rm564434 psql -U orbiuser -d orbifreight -c "\dt"
-docker exec -it postgres-rm564434 psql -U orbiuser -d orbifreight -c "SELECT * FROM tipo_carga;"
-docker exec -it postgres-rm564434 psql -U orbiuser -d orbifreight -c "SELECT id, placa_veiculo, origem, destino, status FROM carga;"
-docker exec -it postgres-rm564434 psql -U orbiuser -d orbifreight -c "SELECT id, carga_id, titulo, nivel, status FROM alerta;"
-docker exec -it postgres-rm564434 psql -U orbiuser -d orbifreight -c "SELECT c.placa_veiculo, tc.nome AS tipo, a.titulo, a.nivel FROM carga c JOIN tipo_carga tc ON tc.id=c.tipo_id JOIN alerta a ON a.carga_id=c.id;"
+# Criar conta
+curl -s -X POST http://localhost:8080/auth/register \
+  -H "Content-Type: application/json" \
+  -d '{"nome":"Eduarda","email":"eduarda@orbi.com","senha":"senha123","cargo":"GESTOR"}'
+
+# Login + capturar token
+TOKEN=$(curl -s -X POST http://localhost:8080/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"eduarda@orbi.com","senha":"senha123"}' \
+  | python3 -c "import sys,json; print(json.load(sys.stdin)['token'])")
+
+# CREATE — Tipo de Carga
+curl -s -X POST http://localhost:8080/tipos-carga \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"nome":"Carne Bovina","tempMin":0,"tempMax":4,"umidadeMax":90,"prazoMaxHoras":48}'
+
+# CREATE — Carga
+curl -s -X POST http://localhost:8080/cargas \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"tipoId":1,"veiculoId":1,"motoristaId":1,"placaVeiculo":"ABC1D234","origem":"Sao Paulo SP","destino":"Campinas SP","tempMin":0,"tempMax":4,"umidadeMax":90,"status":"ATIVA"}'
+
+# CREATE — Alerta
+curl -s -X POST http://localhost:8080/alertas \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"cargaId":1,"titulo":"Temperatura critica","descricao":"Sensor IoT registrou 6.5C acima do limite","nivel":"CRITICO","status":"ABERTO"}'
+
+# READ
+curl -s http://localhost:8080/cargas -H "Authorization: Bearer $TOKEN"
+curl -s http://localhost:8080/alertas -H "Authorization: Bearer $TOKEN"
+
+# UPDATE
+curl -s -X PUT http://localhost:8080/cargas/1 \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"tipoId":1,"veiculoId":1,"motoristaId":1,"placaVeiculo":"ABC1D234","origem":"Sao Paulo SP","destino":"Ribeirao Preto SP","tempMin":0,"tempMax":4,"umidadeMax":90,"status":"ATIVA"}'
+
+# DELETE
+curl -s -X DELETE http://localhost:8080/cargas/1 -H "Authorization: Bearer $TOKEN"
 ```
 
 ---
 
-## 🧪 CRUD da API (via Swagger ou curl)
-
-Acesse `http://SEU_IP_PUBLICO:8080/swagger-ui.html` e execute na ordem:
-
-1. **POST /auth/register** → `{"nome":"Eduarda","email":"eduarda@orbi.com","senha":"senha123","cargo":"GESTOR"}`
-2. **POST /auth/login** → copie o token
-3. Clique em **Authorize** 🔓 e cole o token
-4. **POST /tipos-carga** → `{"nome":"Carne Bovina","tempMin":0,"tempMax":4,"umidadeMax":90,"prazoMaxHoras":48}`
-5. **POST /cargas** → `{"tipoId":1,"veiculoId":1,"motoristaId":1,"placaVeiculo":"ABC1D234","origem":"Sao Paulo SP","destino":"Campinas SP","tempMin":0,"tempMax":4,"umidadeMax":90,"status":"ATIVA"}`
-6. **POST /alertas** → `{"cargaId":1,"titulo":"Temperatura critica","descricao":"Sensor IoT 6.5C","nivel":"CRITICO","status":"ABERTO"}`
-7. **GET /cargas** (Read) · **PUT /cargas/1** (Update) · **DELETE /cargas/1** (Delete)
-
----
-
-## 🛑 Comandos úteis
+## 🗄️ SELECT no Banco — Evidência de Persistência e Relacionamento
 
 ```bash
-docker compose down          # para os containers
-docker compose up -d         # sobe de novo (sem rebuild)
-docker compose logs -f       # acompanha logs em tempo real
-docker stats                 # uso de CPU/memória
+# Estrutura das tabelas (mostra Foreign Keys)
+docker exec -it postgres-rm564434 psql -U orbiuser -d orbifreight -c "\d carga"
+docker exec -it postgres-rm564434 psql -U orbiuser -d orbifreight -c "\d alerta"
+
+# SELECT simples por tabela
+docker exec -it postgres-rm564434 psql -U orbiuser -d orbifreight -c "SELECT * FROM tipo_carga;"
+docker exec -it postgres-rm564434 psql -U orbiuser -d orbifreight -c "SELECT id, placa_veiculo, status FROM carga;"
+docker exec -it postgres-rm564434 psql -U orbiuser -d orbifreight -c "SELECT id, carga_id, titulo, nivel FROM alerta;"
+
+# JOIN — prova o relacionamento entre as 3 tabelas
+docker exec -it postgres-rm564434 psql -U orbiuser -d orbifreight -c "
+SELECT c.id AS carga_id, c.placa_veiculo, tc.nome AS tipo_de_carga,
+       c.status, a.titulo AS alerta, a.nivel
+FROM carga c
+JOIN tipo_carga tc ON tc.id = c.tipo_id
+JOIN alerta     a  ON a.carga_id = c.id;"
 ```
 
 ---
@@ -207,21 +243,21 @@ docker stats                 # uso de CPU/memória
 
 | Requisito | Status |
 |---|---|
-| Dockerfile AlmaLinux 9 personalizado | ✅ |
-| Usuário não-root (orbiuser) | ✅ |
-| WORKDIR /app | ✅ |
-| Variável de ambiente App | ✅ |
+| Dockerfile com AlmaLinux 9 personalizado | ✅ |
+| Usuário não-root: orbiuser | ✅ |
+| WORKDIR definido: /app | ✅ |
+| Variável de ambiente no App | ✅ |
 | Porta 8080 exposta | ✅ |
 | Nome container App com RM564434 | ✅ |
-| CRUD completo 2+ tabelas relacionadas | ✅ |
-| Volume nomeado (orbifreight-pgdata) | ✅ |
-| Variável de ambiente banco | ✅ |
+| CRUD completo + 2 tabelas relacionadas | ✅ |
+| Volume nomeado: orbifreight-pgdata | ✅ |
+| Variável de ambiente no banco | ✅ |
 | Porta 5432 exposta | ✅ |
 | Nome container banco com RM564434 | ✅ |
-| Mesma rede bridge | ✅ |
-| Execução background (-d) | ✅ |
-| Solução em NUVEM (VM Azure + IP público) | ✅ |
+| Rede bridge compartilhada | ✅ |
+| Execução em background (-d) | ✅ |
+| Solução em nuvem — VM Azure com IP público | ✅ |
 
 ---
 
-*OrbiFreight · Global Solution 2026/1 · FIAP 2TDS · VM AlmaLinux 9*
+*OrbiFreight · Global Solution 2026/1 · FIAP 2TDS · VM AlmaLinux 9 · RM564434*
