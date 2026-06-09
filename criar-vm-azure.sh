@@ -1,7 +1,13 @@
 #!/bin/bash
 # ═══════════════════════════════════════════════════════════════════════
 #  OrbiFreight — Criar VM AlmaLinux no Azure
-#  Tenta automaticamente vários tamanhos e regioes
+#  Tenta automaticamente varias regioes e tamanhos ate conseguir
+#
+#  COMO USAR:
+#    1. Use o Azure Cloud Shell (portal.azure.com, icone >_) ou Azure CLI
+#    2. Faca upload deste arquivo
+#    3. Rode:  chmod +x criar-vm-azure.sh && ./criar-vm-azure.sh
+#
 #  RM564434 — Eduarda Weiss Ventura
 # ═══════════════════════════════════════════════════════════════════════
 
@@ -11,10 +17,10 @@ ADMIN_USER="azureuser"
 ADMIN_PASSWORD="OrbiFreight.GS.2026"
 IMAGE="almalinux:almalinux-x86_64:9-gen2:latest"
 
-# Lista de regioes para tentar (na ordem)
-LOCATIONS=("eastus2" "westus2" "centralus" "northeurope" "westeurope")
+# Regioes para tentar (na ordem) - contornam o bloqueio de regiao da conta estudante
+LOCATIONS=("eastus2" "westus2" "centralus" "northeurope" "westeurope" "canadacentral" "uksouth" "australiaeast")
 
-# Lista de tamanhos para tentar (na ordem, todos com 2+ vCPU / 4+ GB RAM)
+# Tamanhos para tentar (na ordem) - contornam falta de estoque
 SIZES=("Standard_D2s_v5" "Standard_D2s_v3" "Standard_DS2_v2" "Standard_B2ms" "Standard_D2_v3")
 
 echo ""
@@ -23,10 +29,9 @@ echo "  VM    : $VM_NAME"
 echo "  Imagem: AlmaLinux 9"
 echo ""
 
-# Limpar grupo existente se houver
 echo "Limpando recursos anteriores (se existirem)..."
 az group delete --name "$RESOURCE_GROUP" --yes --no-wait 2>/dev/null || true
-sleep 5
+sleep 8
 
 SUCCESS=false
 
@@ -35,13 +40,11 @@ for LOCATION in "${LOCATIONS[@]}"; do
     echo ""
     echo "Tentando: regiao=$LOCATION  tamanho=$SIZE"
 
-    # Criar Resource Group
     az group create \
       --name "$RESOURCE_GROUP" \
       --location "$LOCATION" \
       --output none 2>/dev/null || true
 
-    # Tentar criar VM
     if az vm create \
       --resource-group "$RESOURCE_GROUP" \
       --name "$VM_NAME" \
@@ -52,7 +55,7 @@ for LOCATION in "${LOCATIONS[@]}"; do
       --public-ip-sku Standard \
       --output none 2>/dev/null; then
 
-      echo "OK! VM criada com sucesso."
+      echo "OK! VM criada."
       SUCCESS=true
       FINAL_LOCATION=$LOCATION
       FINAL_SIZE=$SIZE
@@ -68,13 +71,12 @@ done
 if [ "$SUCCESS" = false ]; then
   echo ""
   echo "ERRO: Nao foi possivel criar a VM em nenhuma regiao/tamanho."
-  echo "Tente fazer o login novamente com: az login"
+  echo "Rode 'az login' de novo e tente novamente."
   exit 1
 fi
 
-# Abrir porta 8080
 echo ""
-echo "Abrindo porta 8080..."
+echo "Abrindo porta 8080 (API)..."
 az vm open-port \
   --resource-group "$RESOURCE_GROUP" \
   --name "$VM_NAME" \
@@ -82,7 +84,6 @@ az vm open-port \
   --priority 1001 \
   --output none
 
-# Pegar IP
 IP=$(az vm show \
   --resource-group "$RESOURCE_GROUP" \
   --name "$VM_NAME" \
@@ -104,6 +105,14 @@ echo ""
 echo "  Conecte na VM:"
 echo "    ssh $ADMIN_USER@$IP"
 echo ""
+echo "  Dentro da VM:"
+echo "    git clone https://github.com/eduardawv/global-solution-orbifreight.git"
+echo "    cd global-solution-orbifreight"
+echo "    chmod +x vm-setup-almalinux.sh && ./vm-setup-almalinux.sh"
+echo "    exit   (e reconecte por SSH)"
+echo "    cd global-solution-orbifreight"
+echo "    cp .env.example .env && docker compose up -d --build"
+echo ""
 echo "  API ficara em:"
 echo "    http://$IP:8080/swagger-ui.html"
 echo ""
@@ -111,4 +120,6 @@ echo "  Para DESLIGAR (economizar credito):"
 echo "    az vm deallocate -g $RESOURCE_GROUP -n $VM_NAME"
 echo "  Para LIGAR de novo:"
 echo "    az vm start -g $RESOURCE_GROUP -n $VM_NAME"
+echo "  Para DELETAR TUDO:"
+echo "    az group delete --name $RESOURCE_GROUP --yes --no-wait"
 echo ""
